@@ -1,0 +1,583 @@
+//二叉树节点
+//BinNode模板类
+#define BinNodePosi(T) BinNode<T>* //节点位置 
+#define stature(p) ((p) ? (p)->height : -1) //节点高度（与“空树高度为-1”的约定相统一） 
+typedef enum { RB_RED, RB_BLACK} RBColor; //节点颜色 
+
+template <typename T> struct BinNode { //二叉树节点模板类 
+// 成员（为简化描述起见统一开放，读者可根据需要进一步封装） 
+	T data; //数值 
+	BinNodePosi(T) parent; BinNodePosi(T) lc; BinNodePosi(T) rc; //父节点及左、右孩子 
+	int height; //高度（通用） 
+	int npl; //Null Path Length（左式堆，也可直接用height代替） 
+	RBColor color; //颜色（红黑树） 
+	// 构造函数 
+	BinNode() :                                                                                         //定义一个参数初始化表，并对数据成员初始化
+	parent ( NULL ), lc ( NULL ), rc ( NULL ), height ( 0 ), npl ( 1 ), color ( RB_RED ) { } 
+	BinNode ( T e, BinNodePosi(T) p = NULL, BinNodePosi(T) lc = NULL, BinNodePosi(T) rc = NULL,         //定义一个有参数的构造函数，并对数据成员初始化
+	int h = 0, int l = 1, RBColor c = RB_RED ) : 
+	data ( e ), parent ( p ), lc ( lc ), rc ( rc ), height ( h ), npl ( l ), color ( c ) { } 
+	// 操作接口 
+	int size(); //统计当前节点后代总数，亦即以其为根的子树的规模 
+	BinNodePosi(T) insertAsLC ( T const& ); //作为当前节点的左孩子插入新节点 
+	BinNodePosi(T) insertAsRC ( T const& ); //作为当前节点的右孩子插入新节点 
+	BinNodePosi(T) succ(); //取当前节点的直接后继 
+	template <typename VST> void travLevel ( VST& ); //子树层次遍历 
+	template <typename VST> void travPre ( VST& ); //子树先序遍历 
+	template <typename VST> void travIn ( VST& ); //子树中序遍历 
+	template <typename VST> void travPost ( VST& ); //子树后序遍历 
+	// 比较器、判等器（各列其一，其余自行补充） 
+	bool operator< ( BinNode const& bn ) { return data < bn.data; } //小于 
+	bool operator== ( BinNode const& bn ) { return data == bn.data; } //等于 
+ };
+
+ 
+ //快捷方式
+/****************************************************************************************** 
+* BinNode状态与性质的判断 
+******************************************************************************************/ 
+#define IsRoot(x) ( ! ( (x).parent ) )
+#define IsLChild(x) ( ! IsRoot(x) && ( & (x) == (x).parent->lc ) ) 
+#define IsRChild(x) ( ! IsRoot(x) && ( & (x) == (x).parent->rc ) )
+#define HasParent(x) ( ! IsRoot(x) ) 
+#define HasLChild(x) ( (x).lc ) 
+#define HasRChild(x) ( (x).rc ) 
+#define HasChild(x) ( HasLChild(x) || HasRChild(x) ) //至少拥有一个孩子 
+#define HasBothChild(x) ( HasLChild(x) && HasRChild(x) ) //同时拥有两个孩子
+#define IsLeaf(x) ( ! HasChild(x) ) 
+
+/****************************************************************************************** 
+* 与BinNode具有特定关系的节点及指针 
+******************************************************************************************/
+#define sibling(p) /*兄弟*/ \ 
+( IsLChild( * (p) ) ? (p)->parent->rc : (p)->parent->lc ) 
+
+#define uncle(x) /*叔叔（父节点的兄弟）*/ \ 
+( IsLChild( * ( (x)->parent ) ) ? (x)->parent->parent->rc : (x)->parent->parent->lc ) 
+
+#define FromParentTo(x) /*来自父亲的引用*/ \ 
+( IsRoot(x) ? _root : ( IsLChild(x) ? (x).parent->lc : (x).parent->rc ) )
+
+
+
+//二叉树节点操作接口
+//插入孩子节点  （约定：当前节点尚无左孩子/右孩子）
+template <typename T> BinNodePosi(T) BinNode<T>::insertAsLC(T const& e)
+{return lc = newBinNode(e,this);}   //将e作为当前节点的左孩子插入二叉树
+
+template <typename T> BinNodePosi(T) BinNode<T>::insertAsRC(T const& e)
+{return rc = newBinNode(e,this);}   //将e作为当前节点的右孩子插入二叉树
+
+//遍历
+template <typename T> template <typename VST> //元素类型、操作器 
+void BinNode<T>::travIn ( VST& visit ) { //二叉树中序遍历算法统一入口 
+	switch ( rand() % 5 ) { //此处暂随机选择以做测试，共五种选择 
+		case 1: travIn_I1 ( this, visit ); break; //迭代版#1 
+		case 2: travIn_I2 ( this, visit ); break; //迭代版#2 
+		case 3: travIn_I3 ( this, visit ); break; //迭代版#3 
+		case 4: travIn_I4 ( this, visit ); break; //迭代版#4 
+		default: travIn_R ( this, visit ); break; //递归版 
+	} 
+}
+
+
+//二叉树
+//BinTree模板类
+#include "BinNode.h" //引入二叉树节点类 
+template <typename T> class BinTree { //二叉树模板类 
+protected: 
+	int _size; BinNodePosi(T) _root; //规模、根节点 
+	virtual int updateHeight ( BinNodePosi(T) x ); //更新节点x的高度 
+	void updateHeightAbove ( BinNodePosi(T) x ); //更新节点x及其祖先的高度 
+public: 
+	BinTree() : _size ( 0 ), _root ( NULL ) { } //构造函数 
+	~BinTree() { if ( 0 < _size ) remove ( _root ); } //析构函数 
+	int size() const { return _size; } //规模 
+	bool empty() const { return !_root; } //判空 
+	BinNodePosi(T) root() const { return _root; } //树根 
+	BinNodePosi(T) insertAsRoot ( T const& e ); //插入根节点 
+	BinNodePosi(T) insertAsLC ( BinNodePosi(T) x, T const& e ); //e作为x的左孩子（原无）插入 
+	BinNodePosi(T) insertAsRC ( BinNodePosi(T) x, T const& e ); //e作为x的右孩子（原无）插入 
+	BinNodePosi(T) attachAsLC ( BinNodePosi(T) x, BinTree<T>* &T ); //T作为x左子树接入
+	BinNodePosi(T) attachAsRC ( BinNodePosi(T) x, BinTree<T>* &T ); //T作为x右子树接入 
+	int remove ( BinNodePosi(T) x ); //删除以位置x处节点为根的子树，返回该子树原先的规模 
+	BinTree<T>* secede ( BinNodePosi(T) x ); //将子树x从当前树中摘除，并将其转换为一棵独立子树 
+	template <typename VST> //操作器 
+	void travLevel ( VST& visit ) { if ( _root ) _root->travLevel ( visit ); } //层次遍历 
+	template <typename VST> //操作器 
+	void travPre ( VST& visit ) { if ( _root ) _root->travPre ( visit ); } //先序遍历
+	template <typename VST> //操作器 
+	void travIn ( VST& visit ) { if ( _root ) _root->travIn ( visit ); } //中序遍历 
+	template <typename VST> //操作器
+	void travPost ( VST& visit ) { if ( _root ) _root->travPost ( visit ); } //后序遍历 
+	bool operator< ( BinTree<T> const& t ) //比较器（其余自行补充） 
+	{ return _root && t._root && lt ( _root, t._root ); } 
+	bool operator== ( BinTree<T> const& t ) //判等器 
+	{ return _root && t._root && ( _root == t._root ); } 
+}; //BinTree
+
+//高度更新
+template <typename T> int BinTree<T>::updateHeight(BinNodePosi(T) x)    //更新节点x高度
+{return x->height = 1 + max(stature(x->lc),stature(x->rc));}            //具体规则，因树而异
+
+template <typename T> void BinTree<T>::updateHeightAbove(BinNodePosi(T) x) //更新高度
+{while (x){updateHeight(x),x = x->parent;}}                             //从x出发，覆盖历代祖先。可优化
+
+//节点插入
+template <typename T> BinNodePosi(T) BinTree<T>::insertAsRoot (T const& e)
+{_size = 1;return _root = new BinNode<T> (e);}   //将e当作根节点插入空的二叉树
+
+template <typename T> BinNodePosi(T) BinTree<T>::insertAsLC(BinNodePosi(T) x, T const& e)
+{_size++;x->insertAsLC(e);updateHeightAbove(x);return x->lc;}   //e插入为x的左孩子
+
+template <typename T> BinNodePosi(T) BinTree<T>::insertAsRC(BinNodePosi(T) x, T const& e)
+{_size;x->insertAsRC(e);updateHeightAbove(x);return x->rc;}   //e插入为x的右孩子
+
+//子树接入
+template <typename T> //二叉树子树接入算法：将S当作节点x的右子树接入，S本身置空 
+BinNodePosi(T) BinTree<T>::attachAsRC ( BinNodePosi(T) x, BinTree<T>* &S ) { //x->rc == NULL 
+	if ( x->rc = S->_root ) x->rc->parent = x; //接入 
+	size += S->_size; updateHeightAbove ( x ); //更新全树规模与x所有祖先的高度 
+	S->_root = NULL; S->_size = 0; release ( S ); S = NULL; return x; //释放原树，返回接入位置 
+} //attachAsLC()完全对称，在此省略；release()负责释放复杂结构，与算法无直接关系，具体实现详见代码包
+
+//子树删除
+template <typename T> //删除二叉树中位置x处的节点及其后代，返回被删除节点的数值 
+int BinTree<T>::remove ( BinNodePosi(T) x ) { //assert: x为二叉树中的合法位置 
+	FromParentTo ( *x ) = NULL; //切断来自父节点的指针 
+	updateHeightAbove ( x->parent ); //更新祖先高度 
+	int n = removeAt ( x ); _size -= n; return n; //删除子树x，更新规模，返回删除节点总数 
+} 
+template <typename T> //删除二叉树中位置x处的节点及其后代，返回被删除节点的数值 
+static int removeAt ( BinNodePosi(T) x ) { //assert: x为二叉树中的合法位置 
+	if ( !x ) return 0; //递归基：空树 
+	int n = 1 + removeAt ( x->lc ) + removeAt ( x->rc ); //递归释放左、右子树   递归！！！！
+	release ( x->data ); release ( x ); return n; //释放被摘除节点，并返回删除节点总数 
+} //release()负责释放复杂结构，与算法无直接关系，具体实现详见代码包
+
+
+//子树分离
+template <typename T>         //二叉树子树分离算法：将子树x从当前树中摘除，将其封装为一棵独立子树返回
+BinTree<T>* BinTree<T>::secede(BinNodePosi(T) x) {     //assert: x为二叉树中的合法位置
+	FromParentTo (*x) = NULL;                    //切断来自父节点的指针
+	updateHeightAbove(x->parent);                //更新原树中所有祖先的高度
+	BinTree<T>* S = new BinTree<T>; s->_root = x; x->parent = NULL;       //新树以x为根
+	S->_size = x->size(); _size -= _size; return S;                     //更新规模，返回分离出来的子树
+}
+
+
+//遍历
+//先序遍历
+template <typename T, typename VST> //元素类型、操作器
+void travPre_R (BinNodePosi(T) x, VST& visit){
+	if(!x) return;
+	visit(x->data);
+	travPre_R(x->lc,visit);
+	travPre_R(x->rc,visit);
+}
+
+//后序遍历
+template <typename T, typename VST)  //元素类型、操作器
+void travPost_R(BinNodePosi(T) x, VST& visit) {     //二叉树后序遍历算法（递归版）
+	if(!x) return;
+	travPost_R(x->lc,visit);
+	travPost_R(x->rc,visit);
+	visit(x->data);
+}
+
+//中序遍历
+template <typename T, typename VST)  //元素类型、操作器
+void travIn_R(BinNodePosi(T) x, VST& visit) {     //二叉树中序遍历算法（递归版）
+	if(!x) return;
+	travIn_R(x->lc,visit);
+	visit(x->data);	
+	travIn_R(x->rc,visit);
+}
+
+//迭代版遍历
+//先序遍历
+//从当前节点出发，沿左分支不断深入，直至没有左分支的节点；沿途节点遇到后立即访问
+template <typename T, typename VST>
+static void visitAlongLeftBranch(BinNodePosi(T) x, VST& visit,Stack<BinNodePosi(T)>& S){
+	while(x)
+	{	
+		visit(x->data);
+		S.push(x->rc);
+		x = x->lc;
+	}
+}
+
+template <typename T,typename VST>
+void travPre_I2(BinNodePosi(T) x,VST& visit){
+	Stack<BinNodePosi(T)> S;   //辅助栈
+	while(true){
+		visitAlongLeftBranch(x,visit,S);
+		if(S.empty()) break;
+		x = S.pop();
+	}
+}
+
+//中序遍历 迭代版#1
+template <typename T>   //从当前节点出发，沿左分支不断深入，直至没有左分支的节点
+static void goAlongLeftBranch(BinNodePosi(T) x, Stack<BinNodePosi(T)>& S) {
+	while (x) {S.push(x); x = x->lc;}     //当前节点入栈后随即向左侧分支深入，迭代直到无左孩子
+}
+
+template <typename T, typename VST>   //元素类型、操作器
+void travIn_I1(BinNodePosi(T) x, VST& visit){      //二叉树中序遍历算法（迭代版#1）
+	Stack<BinNodePosi(T) S;                        //辅助线
+	while (true){
+		goAlongLeftBranch(x,S);                    //从当前节点出发，逐批入栈
+		if(S.empty())  break;                      //直至所有节点处理完毕
+		x = S.pop();visit(x->Data);                //弹出栈节点并访问之
+		x = x->rc;                                 //转向右子树
+	}
+}
+
+//直接后继及其定位
+template <typename T>
+BinNodePosi(T) BinNode(T)::succ() {    //定位节点v的直接后继
+	BinNodePosi(T) s = this;           //记录后继的临时变量
+	if(rc) {                           //若有右孩子，则直接后继必在右子树中，具体的就是
+		s = rc;                        //右子树
+		while(HasLChild(*s)) s = s->lc;      //最靠左（小）的节点
+	}else{                                   //否则，直接后继应是“将当前节点包含于其左子树中的最低祖先”，具体的就是
+		while(IsRChild(*s)) s = s->parent;   //逆向地沿右向分支，不断朝左上方移动
+		s = s->parent;                        //最后再朝右上方移动一步，即抵达直接后继（如果存在）； 若是NULL，则它是中序遍历的终点，没有后继
+	}
+	return s;
+}
+
+
+//中序遍历  迭代版#2
+template <typename T, typename VST>             //元素类型、操作器
+void travIn_I2(BinNodePosi(T) x, VST& visit) {    //二叉树中序遍历算法（迭代版#2）
+	Stack<BinNodePosi(T)> S;                    //辅助栈
+	while (true)
+	{
+		if(x){
+			S.push(x);                         //根节点进栈
+			x = x->lc;                         //深入遍历左子树
+		}else if(!S.empty()) {
+			x = S.pop();                       //尚未访问的最低祖先节点退栈
+			visit(x->data);                    //访问该祖先节点
+			x = x->rc;                         //遍历祖先的右子树
+		}else
+		break;                                 //遍历完成
+	}	
+}
+
+//中序遍历  迭代版#3
+template <typename T, typename VST>              //元素类型、操作器
+void travIn_I3 (BinNodePosi(T) x,VST& visit) {    //二叉树中序遍历算法（迭代版#3，无需辅助栈）
+	bool backtrack = false;                        //前一步是否刚从右子树回溯————省去栈，仅σ(1)辅助空间； 相当于将原辅助栈替换为一个标志位backtrack
+	while(true)
+	{
+		if(!backtrack && HasLChild(*x))           //若有左子树且不是刚刚回溯，则
+			x = x->lc;                            //深入遍历左子树
+		else{                                     //否则————无左子树或刚刚回溯（相当于无左子树）
+			visit(x->data);                       //访问该节点
+			if(HasRChild(*x)) {                   //若其右子树非空，则
+				x = x->rc;                        //深入右子树继续遍历
+				backtrack = false;                //并关闭回溯标志
+			}else{                                //若右子树空，则
+				if(!(x =  x->succ()))break;       //回溯（含抵达末节点时退出返回，遍历完成）
+				backtrack = true;                 //并设置回溯标志位
+			}
+		}
+	}
+}
+
+
+//后序遍历
+template <typename T>        //在以S栈顶节点为根的子树中，找到最高左侧可见叶节点
+static void gotoHLVFL(Stack<BinNodePosi(T)>& S) {    //沿途所遇节点依次入栈
+	while(BinNodePosi(T) x = S.top())                //自顶而下，反复检查当前节点（即栈顶）
+	{
+		if(HasLChild(*x)) {                         //尽可能向左
+			if(HasRChild(*x))S.push(x->rc);         //若有右孩子，优先入栈
+			S.push(lc);                             //然后才转至左孩子
+		}else                                       //实不得已
+		S.push(x->rc);                              //才向右
+	}
+	S.pop();                                       //返回之前，弹出栈顶的节点
+}
+
+template <typename T, typename VST>
+void travPost_I(BinNodePosi(T) x, VST& visit){       //二叉树的后序遍历（迭代版）
+	Stack<BinNodePosi(T)>S;                          //辅助栈
+	if(x) S.push(x);                                 //根节点入栈
+	while(!S.empty()){
+		if(S.top() != x->parent)                     //若栈顶非当前节点之父（则必为其右兄），此时需
+			gotoHLVFL(S);                            //在以其右兄为根之子树中，找到HLVFL(相当于递归深入其中)
+		x =S.pop();visit(x->data);                   //弹出栈顶（即前一节点之后继），并访问之
+	}
+}
+
+//层次遍历  使用队列结构（先进先出）
+template <typename T> template <typename VST>         //元素类型、操作器
+void BinNode<T>::travLevel(VST& visit) {              //二叉树层次遍历算法
+	Queue<BinNodePosi(T)> Q;                          //辅助遍历
+	Q.enqueue(this);                                  //根节点入队
+	while(!Q.empty()){                                //在队列再次变空之前，反复迭代
+		BinNodePosi(T) x = Q.dequeue();visit(x->data);    //取出队首节点并访问之
+		if(HasLChild (*x))Q.enqueue(x->lc);                //左孩子入队
+		if(HasRChild (*x))Q.enqueue(x->rc);                //右孩子入队
+	}
+}
+
+
+
+//Huffman编码
+//PFC编码及解码
+//总体框架
+int main(int argc, char* argv[]){                 //PFC编码、解码算法统一测试入口
+	PFCForest* forest = initForest();             //初始化PFC森林
+	PFCTree* tree = generateTree(forest);release(forest);   //生成PFC编码树
+	PFCTable* table = generateTable(tree);                  //将PFC编码树转换为编码表
+	for(int i = 1; i < argc; i++){                          //对于命令行传入的每一明文串
+		Bitmap codeString;                                  //二进制编码串
+		int n = encode(table, codeString, argv[i]);         //将根据编码表生成（长度为n)
+		decode(tree, codeString, n);                        //利用编码树，对长度为n的二进制编码串解码（直接输出）   
+	}
+	release(table);release(tree);return 0;                  //释放编码表、编码树
+}
+
+//PFC编码使用的数据结构
+#include "../BinTree/BinTree.h"          //用BinTree实现PFC树
+typedef BinTree<char> PFCTree;           //PFC树
+
+#include "../Vector/vector.h"            //用Vector实现PFC森林
+typedef Vector<PFCTree*> PFCForest;      //PFC森林
+
+#include "../Bitmap/Bitmap.h"            //使用位图结构实现二进制编码串
+#include "../Skiplist/Skiplist.h"        //引入Skiplist式词典结构实现
+typedef Skiplist <char, char*> PFCTable;  //PFC编码表，词条格式为：（key = 字符，value = 编码串）
+
+#define N_CHAR (0x80 - 0x20)              //只考虑可打印字符
+
+
+//初始化PFC森林
+PFCForest* initForest(){                        //PFC编码森林初始化
+	PFCForest* forest = new PFCForest;          //首先创建森林，然后
+	for(int i =0; i < N_CHAR; i++)              //对每一个可打印字符[0x20,0x80)
+	{
+		forest->insert(i,new PFCTree());        //创建一棵对应的PFC编码树，初始时其中
+		(*forest)[i]->insertAsRoot(0x20 + i);   //只包含对应的一个（叶、根）节点
+	}
+	return forest;                              //返回包含N_CHAR棵树的森林，其中每棵树各包含一个字符
+}
+
+//构造PFC编码树
+PFCTree* generateTree(PFCForest* forest){                   //构造PFC树
+	srand((unsigned int) time(NULL));                       //这里将随机取树合并，故先设置随机种子
+	while(1 < forest->size()){                              //共做|forest|-1 次合并
+		PFCTree*s = new PFCTree; s->insertAsRoot('^');      //创建新树（根标记为'^')
+		Rank r1 = rand()% forest->size();                   //随机选取r1,且
+		s->attachAsLC(s->root(),(*forest)[r1]);             //作为左子树接入后
+		forest->remove(r1);                                 //随即退出
+		Rank r2 =rand()%forest->size();                     //随机选取r2,且
+		s->attachAsRC(s->root(),(*forest)[r2]);             //作为右子树接入后
+		forest.remove(r2);                                  //随即剔除
+		forest->insert(forest->size(),s);                   //合并后的PFC树重新植入PFC森林
+	}
+	return(*forest)[0];
+}
+
+//生成PFC编码表
+void generateCT
+(Bitmap* code, int length, PFCTable* table, BinNodePosi(char) v){
+	if(IsLeaf(*v))         //若是叶节点
+		{table->put(v->data,code->bits2string(length));return;}
+	if(HasLChild(*v))      //Left = 0
+		{code->clear(length);generateCT(code,length + 1,table,v->lc);}
+	if(HasRChild(*v))      //right = 1
+		{code->clear(length);generateCT(code,length + 1,table,v->rc);}
+}
+PFCTable* generateTable(PFCTree* tree){             //构造PFC编码表
+	PFCTable* table = new PFCTable;                 //创建以Skiplist实现的编码表
+	Bitmap* code = new Bitmap;                      //用于RPS的位图
+	generateCT(code, 0, table, tree->root());       //遍历以获取各字符（叶节点）的RPS
+	release(code);return table;                     //释放编码位图，返回编码表
+}
+//编码
+int encode(PFCTable* table, Bitmap& codeString, char* s){            //PFC编码算法
+	int n = 0;
+	for(size_t m = strlen(s), i = 0; i < m; i++){                    //对于明文s[]中的每个字符
+		char** pCharCode = table->get(s[i]);                         //取出其对应的编码串
+		if(!pCharCode) pCharCode = table->get(s[i] + 'A' - 'a');     //小写字母转为大写
+		if(!pCharCode) pCharCode = table->get(' ');                  //无法识别的字符统一视作空格
+		printf("%s",*pCharCode);                                     //输出当前字符的编码
+		for(size_t m = strlen(*pCharCode), j = 0; j < m; j++)        //将当前字符的编码接入编码串
+			'1' == *(*pCharCode + j) ? codeString.set(n++) : code.clear(n++);
+	}
+	return n;        //二进制编码串记录于codeString中，返回编码串总长
+}
+//解码
+void decode(PFCTree* tree, Bitmap& code, int n){      //PFC解码算法
+	BinNodePosi(char) x = tree->root();               //根据PFC编码树
+	for(int i = 0; i < n; i++){                       //将编码（二进制位图）
+		x = code.test(i) ? x->rc : x->lc;             //转译为明码并
+		if(IsLeaf(*x)){printf("%c",x->data);x = tree->root();}        //打印输出
+	}
+}
+
+
+//Huffman编码
+//总体框架
+/******************
+*无论编码森林由列表、完全堆还是左式堆实现，本测试过程都可适用
+*编码森林的实现方式采用优先级队列时，编译前对应的工程只需设置相应标志：
+* DSA_PQ_List、 DSA_PQ_ComplHeap或DSA_PQ_LeftHeap
+*********************************/
+int main(int argc,char* argv[]){                           //Huffman编码算法统一测试
+	int* freq = statistics(argv[1]);                       //根据样本文件，统计各字符的出现频率
+	HuffForest* forest = initForest(freq);release(freq);   //创建Huffman森林
+	HuffTree* tree = generateTree(forest);release(forest); //生成Huffman编码树
+	HuffTable* table = generateTable(tree);                //将Huffman编码树转换为编码表
+	for(int i = 2; i < argc; i++){                         //对于命令行传入的每一明文串
+		Bitmap* codeString = new Bitmap;                   //二进制编码串
+		int n = encode(table, codeString, argv[i]);        //将根据编码表生成（长度为n）
+		decode(tree, codeString, n);                       //利用Huffman编码树，对长度为n的二进制编码串解码
+		release(codeString);                               
+	}
+	release(table);release(tree);return 0;                //释放编码表、编码树
+}
+//（超）字符
+#define N_CHAR (0x80 - 0x20)   //仅以可打印字符为例
+struct HuffChar{               //Huffman(超)字符
+	char ch; int weight;       //字符、频率
+	HuffChar(char c = '^', int w = 0) : ch(c),weight(w) {};        //经合并生成的超字符，这里统一用'^'表示
+	//比较器、判等器（各列其一，其余自行补充）
+	bool operator < (HuffChar const& hc) {return weight > hc.weight;}    //此处故意大小颠倒
+	bool operator== (HuffChar const& hc) {return weight == hc.weight;}
+}
+
+//数据结构的选取与设计
+//可借助BinTree模板类定义Huffman编码树类型HuffTree
+#define HuffTree BinTree<HuffChar>          //Huffman树，由BinTree派生，节点类型为HuffChar
+
+//可借助List模板类定义Huffman森林类型HuffForest
+#include "../List/List.h"        //用List实现
+typedef List<HuffTree*> HuffForest;
+
+//可借助图类Bitmap定义Huffman二进制编码串类型HuffCode
+#include "../Bitmap/Bitmap.h"   //基于Bitmap实现
+typedef Bitmap HuffCode;       //Huffman二进制编码
+
+//基于与跳转接口相同的散列表结构实现HuffTable类型
+#include "../Hashtable/Hashtable.h"           //用Hashtable实现
+typedef Hashtable<char, char*> HuffTable;     //Huffman编码表
+
+
+//字符出现频率的样本统计
+int* statistics(char* sample_text_file){          //统计字符出现频率
+	int* freq = new int[N_CHAR];                  //以下统计需随机访问，故以数组记录各字符出现次数
+	memset(freq, 0 sizeof(int)*N_CHAR);           //清零
+	FILE* fp = fopen(sample_text_file,'r');       //assert:文件存在且可正确打开
+	for(char ch; 0<fscanf(fp,"%c",&ch);)          //逐个扫描样本文件中的每个字符
+		if(ch >= 0x20) freq[ch - 0x20]++;         //累计对应出现的次数
+	fclose(fp);  return freq;
+}
+
+//初始化Huffman森林
+HuffForest* initForest(int* freq){                  //根据频率统计表，为每个字符创建一棵树
+	HuffForest* forest = new HuffForest;            //以List实现的Huffman森林
+	for(int i = 0; i < N_CHAR; i++){                //为每个字符
+		forest->insertAsLast(new HuffTree);         //生成一棵树，并将字符及其频率
+		forest->last()->data->insertAsRoot(HuffChar(0x20 + i, freq[i]));     //存入其中
+	}
+	return forest;
+}
+
+//构造Huffman编码树
+//每一步迭代都通过调用minHChar(),从当前的森林中找出权值最小的一对超字符，
+//将它们合并为一个更大的超字符，并重新插入森林
+HuffTree* minHChar(HuffForest* forest){              //在Huffman森林中找出权重最小的（超）字符
+	ListNodePosi(HuffTree* ) p = forest->first();    //从首节点出发查找
+	ListNodePosi(HuffTree* ) minChar = p;            //最小Huffman树所在的节点位置
+	int minWeight = p->data->root()->data.weight;    //目前的最小权重
+	while(forest->valid(p = p->succ))                //遍历所有节点
+		if(minWeight > p->data->root()->data.weight) //若当前节点所含树更小，则
+			{minWeight = p->data->root()->data.weight; minChar = p;}   //更新记录
+	return forest->remove(minChar);                  //将挑选出的Huffman树从森林中摘除，并返回
+}
+HuffTree* generateTree(HuffForest* forest){          //Huffman编码算法
+	while(1 < forest->size()){
+		HuffTree* T1 = minHChar(forest); HuffTree* T2 = minHChar(forest);
+		HuffTree* S = new HuffTree();
+		S->insertAsRoot(HuffChar('^', T1->root()->data.weight + T2->root()->data.weight));
+		S->attachAsLC(S->root(),T1); S->attachAsRC(S->root(),T2);
+		forest->insertAsLast(S);
+	}    //assert: 循环结束时，森林中唯一（列表首节点中）的那棵树即Huffman编码树
+	return forest->first()->data;
+}
+/***  共需迭代(n-1)次；
+* 总体运行时间 = o(n) + o(n-1) + …… +o(2) = o(n2);    //n2：n的2次方  ***/
+
+
+//生成Huffman编码表
+staic void   //通过遍历获取各字符的编码
+generateCT(Bitmap* code, int length, HuffTable* table, BinNodePosi(HuffChar) v) {
+	if(IsLeaf(*v))    //若是叶节点（还有多种方法可以判断）
+		{table->put(v.data.ch, code->bits2string(length));return;}
+	if(HasLChild(*v)) //left = 0
+		{code->clear(length);generateCT(code, length+1,table,v->lc);}
+	if(HasRChild(*v)) //Right  = 1
+		{code->set(length);generateCT(code, length+1,table,v->rc);}
+}
+HuffTable* generateTable(HuffTree* tree){   //将各字符编码统一存入以散列表实现的编码表中
+	HuffTable* table= new HuffTable; Bitmap* code = new Bitmap;
+	generateCT(code, 0, table,tree->root());release(code); return table;
+};
+
+//编码
+int encode(HuffTable* table, Bitmap* codeString, char* s){    //按照编码表对Bitmap串编码
+	int n = 0;       //待返回的编码串总长n
+	for(size_t m = strlen(s), i = 0; i < m; i++) {      //对于明文串中的每个字符
+		char** pCharCode =table->get(s[i]);             //取出其对应的编码串
+		if(!pCharCode) pCharCode = table->get(s[i] + 'A' - a);   //小写字母转为大写   A~Z:65~90  a~z:97~122  0~9:48~57
+		if(!pCharCode) pCharCode = table->get(' ');     //无法识别的字符统一视作空格
+		printf("%s", *pCharCode);                       //输出当前字符的编码
+		for(size_t m = strlen(*pCharCode), j = 0; j < m; j++)    //将当前字符的编码接入编码串
+			'1' == (*pCharCode + j) ? codeString->set(n++) : codeString->clear(n++);
+	}
+	printf("\n"); return;
+}   //二进制编码串记录于位图codeString中
+
+//解码 
+void decode(HuffTree* tree, Bitmap* code, int n) {        //根据编码树对长为n的Bitmap串解码
+	BinNodePosi(HuffChar) x = tree->root();
+	for(int i = 0l i < n; i++)
+	{
+		x = code->test(i) ? x->rc : x->lc;
+		if(IsLeaf(*x)){printf("%c",x->data.ch); x = tree->root();}
+	}
+}  //解出的明码，在此直接打印输出；实用中可改为根据需要返回上层调用者
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
